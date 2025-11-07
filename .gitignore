@@ -1,0 +1,7 @@
+/generated_animations/
+*.pyc
+__pycache__/
+venv/
+.venv/
+*.egg-info/
+.DS_Store

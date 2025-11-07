@@ -1,0 +1,6 @@
+# Core display library
+git+https://github.com/batzlerg/cd5220.git@jetson-ai-artist
+
+# AI dependencies
+requests
+inflect
