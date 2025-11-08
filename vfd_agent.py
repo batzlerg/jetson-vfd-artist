@@ -375,11 +375,13 @@ def validate_runtime(func: Callable, func_name: str) -> Tuple[bool, str, Optiona
         # Legitimate animations complete in <1s, hung animations never complete
         timeout_thread.join(timeout=2.0)
 
-        if not result['done']:
+        if timeout_thread.is_alive():
+            # Thread is still running, so it's a timeout
             return False, "Timeout: animation hung (>2s for 1s test)", None
-
+        
+        # Thread has finished, now we can safely check the result
         if result['error']:
-            raise result['error']
+            return False, f"Runtime crash: {type(result['error']).__name__}: {str(result['error'])[:100]}", None
 
         elapsed = time.time() - start_time
 
