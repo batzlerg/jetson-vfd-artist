@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
 VFD Animation to MP4 Renderer
-Renders cd5220 animations to video files with proper spacing
+Renders cd5220 animations to video files
+Auto-detects .py (execute) vs .jsonl (load frames from previous execution)
 """
 
 import subprocess
 import sys
+import json
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import random
@@ -18,93 +20,67 @@ import argparse
 
 DEFAULT_FPS = 6
 DEFAULT_DURATION = 10.0
-CANVAS_WIDTH = 640   # Total canvas width
-CANVAS_HEIGHT = 200  # Increased from 160 to prevent bottom clipping
-LEFT_MARGIN = 40     # Left padding for balanced appearance
-TOP_MARGIN = 45      # Top padding
-CHAR_AREA_WIDTH = CANVAS_WIDTH - (LEFT_MARGIN * 2)  # 560px for 20 chars
-CHAR_WIDTH = CHAR_AREA_WIDTH / 20  # 28px per character
-LINE_SPACING = 70    # Vertical distance between line tops
-FONT_SIZE = 28       # Font size to fit in 28px char width
+CANVAS_WIDTH = 640
+CANVAS_HEIGHT = 200
+LEFT_MARGIN = 40
+TOP_MARGIN = 45
+CHAR_AREA_WIDTH = CANVAS_WIDTH - (LEFT_MARGIN * 2)
+CHAR_WIDTH = CHAR_AREA_WIDTH / 20
+LINE_SPACING = 70
+FONT_SIZE = 28
 FONT_PATH = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf'
 
 # ============================================================================
-# FRAME CAPTURING DISPLAY
+# FRAME LOADING
 # ============================================================================
 
-class FrameCapturingDisplay:
-    """Mock display that captures frames for video rendering"""
 
-    def __init__(self):
-        self.frames = []
-        self.current = [' ' * 20, ' ' * 20]
+def load_frames_from_jsonl(jsonl_path: Path):
+    """Load frames from existing JSONL capture file"""
+    with open(jsonl_path) as f:
+        first_line = f.readline()
+        meta = json.loads(first_line)
 
-    def write_positioned(self, char: str, x: int, y: int):
-        """CD5220 uses 1-based coordinates"""
-        if 1 <= x <= 20 and 1 <= y <= 2:
-            line_idx = y - 1
-            char_idx = x - 1
-            line = list(self.current[line_idx])
-            line[char_idx] = char
-            self.current[line_idx] = ''.join(line)
+        if '_meta' not in meta:
+            raise ValueError(f"Invalid JSONL: {jsonl_path}")
 
-    def clear_display(self):
-        self.current = [' ' * 20, ' ' * 20]
+        frames = []
+        for line in f:
+            frame_data = json.loads(line)
+            frames.append((frame_data['line1'], frame_data['line2']))
 
-    def capture_frame(self):
-        """Store current frame state"""
-        self.frames.append((self.current[0], self.current[1]))
+        return frames, meta['_meta']
 
-# ============================================================================
-# ANIMATION EXECUTION
-# ============================================================================
 
 def execute_animation(code: str, func_name: str, duration: float, fps: int):
-    """Execute animation and capture frames"""
+    """Execute animation and capture frames using FrameCapture"""
+    from cd5220 import CD5220, DiffAnimator
+    from frame_capture import FrameCapture
 
-    # Clean code
     if code.startswith('ℹ') or code.startswith('✓') or code.startswith('✗'):
         raise ValueError("Corrupt file (emoji prefix)")
 
     code = code.replace('``````', '')
 
-    display = FrameCapturingDisplay()
-
-    try:
-        from cd5220 import DiffAnimator
-    except ImportError as e:
-        raise ImportError(f"cd5220 not found: {e}")
-
+    display = CD5220.create_simulator_only(debug=False, render_console=False)
     animator = DiffAnimator(display, frame_rate=fps)
+    capture = FrameCapture(animator, animation_id=func_name)
 
-    # Intercept write_frame - capture but don't render
-    def capturing_write(line1: str, line2: str):
-        display.current = [line1[:20].ljust(20), line2[:20].ljust(20)]
-        display.capture_frame()
-
-    animator.write_frame = capturing_write
-
-    # Execute animation
-    namespace = {
-        'DiffAnimator': DiffAnimator,
-        'animator': animator,
-        'random': random,
-        'math': math
-    }
-
+    namespace = {'DiffAnimator': DiffAnimator, 'random': random, 'math': math}
     exec(code, namespace)
 
     if func_name not in namespace:
         raise ValueError(f"Function {func_name} not found")
 
     anim_func = namespace[func_name]
-    anim_func(animator, duration=duration)
+    anim_func(capture.animator, duration=duration)
 
-    return display.frames
+    return capture.get_frames()
 
 # ============================================================================
 # VIDEO RENDERING
 # ============================================================================
+
 
 def render_frames_to_video(frames, output_path: Path, fps: int):
     """Render frames to MP4 using FFmpeg pipe"""
@@ -114,7 +90,6 @@ def render_frames_to_video(frames, output_path: Path, fps: int):
 
     font = ImageFont.truetype(FONT_PATH, FONT_SIZE)
 
-    # Start FFmpeg process
     ffmpeg_cmd = [
         'ffmpeg', '-y',
         '-f', 'rawvideo',
@@ -134,47 +109,44 @@ def render_frames_to_video(frames, output_path: Path, fps: int):
         ffmpeg_cmd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
+        stderr=subprocess.PIPE)
 
     try:
         for line1, line2 in frames:
-            img = Image.new('RGB', (CANVAS_WIDTH, CANVAS_HEIGHT), color='black')
+            img = Image.new(
+                'RGB', (CANVAS_WIDTH, CANVAS_HEIGHT), color='black')
             draw = ImageDraw.Draw(img)
 
-            # Draw line 1 with balanced left margin
             for i, char in enumerate(line1):
                 x = int(LEFT_MARGIN + (i * CHAR_WIDTH))
                 draw.text((x, TOP_MARGIN), char, fill='#00FFFF', font=font)
 
-            # Draw line 2 with balanced left margin
             for i, char in enumerate(line2):
                 x = int(LEFT_MARGIN + (i * CHAR_WIDTH))
-                draw.text((x, TOP_MARGIN + LINE_SPACING), char, fill='#00FFFF', font=font)
+                draw.text((x, TOP_MARGIN + LINE_SPACING),
+                          char, fill='#00FFFF', font=font)
 
-            # Write frame to FFmpeg stdin
             try:
                 proc.stdin.write(img.tobytes())
             except BrokenPipeError:
                 break
 
-        # Close stdin properly
         try:
             proc.stdin.close()
-        except:
+        except BaseException:
             pass
 
-        # Wait for FFmpeg to finish
         proc.wait(timeout=30)
 
         if proc.returncode != 0:
             stderr = proc.stderr.read().decode() if proc.stderr else ''
-            raise RuntimeError(f"FFmpeg failed (code {proc.returncode}): {stderr}")
+            raise RuntimeError(
+                f"FFmpeg failed (code {proc.returncode}): {stderr}")
 
     except Exception as e:
         try:
             proc.kill()
-        except:
+        except BaseException:
             pass
         raise
 
@@ -182,78 +154,156 @@ def render_frames_to_video(frames, output_path: Path, fps: int):
 # MAIN
 # ============================================================================
 
+
 def main():
-    parser = argparse.ArgumentParser(description='Render VFD animations to MP4')
-    parser.add_argument('-d', '--duration', type=float, default=DEFAULT_DURATION)
+    parser = argparse.ArgumentParser(
+        description='Render VFD animations to MP4')
+    parser.add_argument(
+        '-d',
+        '--duration',
+        type=float,
+        default=DEFAULT_DURATION)
     parser.add_argument('--fps', type=int, default=DEFAULT_FPS)
-    parser.add_argument('--force', action='store_true', help='Re-render existing videos')
-    parser.add_argument('files', nargs='*', help='Specific animation files')
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Re-render existing videos')
+    parser.add_argument(
+        'files',
+        nargs='*',
+        help='Animation files (.py or .jsonl) - auto-detects type')
 
     args = parser.parse_args()
 
-    # Check FFmpeg
     try:
         subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("✗ ffmpeg not found. Install: sudo apt-get install ffmpeg")
         sys.exit(1)
 
-    # Check font
     if not Path(FONT_PATH).exists():
         print(f"✗ Font not found: {FONT_PATH}")
         sys.exit(1)
 
     print(f"ℹ Using font: {FONT_PATH}")
-    print(f"ℹ Canvas: {CANVAS_WIDTH}x{CANVAS_HEIGHT}px with {LEFT_MARGIN}px side margins")
+    print(
+        f"ℹ Canvas: {CANVAS_WIDTH}x{CANVAS_HEIGHT}px with {LEFT_MARGIN}px side margins")
 
-    # Find animations
     gen_dir = Path('generated_animations')
     if not gen_dir.exists():
         print(f"✗ Directory not found: {gen_dir}")
         sys.exit(1)
 
-    if args.files:
-        anim_files = [gen_dir / f for f in args.files]
-    else:
-        anim_files = sorted(gen_dir.glob('anim_*.py'))
-
-    print(f"ℹ Found {len(anim_files)} animations")
-
     videos_dir = gen_dir / 'videos'
     videos_dir.mkdir(exist_ok=True)
+
+    # Auto-detect source files
+    if args.files:
+        source_files = []
+        for filename in args.files:
+            # Check multiple locations
+            candidates = [
+                Path(filename),
+                gen_dir / filename,
+                gen_dir / 'frame_captures' / filename,
+            ]
+            for candidate in candidates:
+                if candidate.exists():
+                    source_files.append(candidate)
+                    break
+            else:
+                print(f"✗ File not found: {filename}")
+                sys.exit(1)
+    else:
+        # Default: all .py files
+        source_files = sorted(gen_dir.glob('anim_*.py'))
+
+    print(f"ℹ Found {len(source_files)} files to render")
 
     success = 0
     skipped = 0
     failed = 0
 
-    for py_file in anim_files:
-        func_name = py_file.stem
-        video_path = videos_dir / f"{func_name}.mp4"
+    for source_file in source_files:
+        # Auto-detect file type by extension
+        is_jsonl = source_file.suffix == '.jsonl'
 
-        if video_path.exists() and not args.force:
-            skipped += 1
-            continue
+        if is_jsonl:
+            # JSONL mode: load pre-captured frames
+            anim_id = source_file.stem.replace(
+                '_validation',
+                '').replace(
+                '_playback',
+                '').replace(
+                '_replay',
+                '')
+            video_path = videos_dir / f"{anim_id}.mp4"
 
-        print(f"ℹ Rendering {func_name}...")
-
-        try:
-            code = py_file.read_text()
-            frames = execute_animation(code, func_name, args.duration, args.fps)
-
-            if not frames:
-                print(f"✗ No frames captured")
-                failed += 1
+            if video_path.exists() and not args.force:
+                skipped += 1
                 continue
 
-            render_frames_to_video(frames, video_path, args.fps)
-            print(f"✓ Saved {video_path} ({len(frames)} frames)")
-            success += 1
+            print(f"ℹ Rendering {anim_id} from JSONL...")
 
-        except Exception as e:
-            print(f"✗ Failed: {e}")
-            failed += 1
+            try:
+                frames, metadata = load_frames_from_jsonl(source_file)
 
-    print(f"\n✓ Success: {success} | ⊘ Skipped: {skipped} | ✗ Failed: {failed}")
+                if not frames:
+                    print(f"✗ No frames in JSONL")
+                    failed += 1
+                    continue
+
+                # Calculate FPS from metadata if available
+                fps = args.fps
+                if 'total_frames' in metadata and 'duration' in metadata:
+                    actual_duration = metadata['duration']
+                    if actual_duration > 0:
+                        calculated_fps = metadata['total_frames'] / \
+                            actual_duration
+                        if calculated_fps > 1:
+                            fps = int(calculated_fps)
+
+                render_frames_to_video(frames, video_path, fps)
+                print(
+                    f"✓ Saved {video_path} ({len(frames)} frames @ {fps}fps)")
+                success += 1
+
+            except Exception as e:
+                print(f"✗ Failed: {e}")
+                failed += 1
+
+        else:
+            # Python mode: execute animation code
+            func_name = source_file.stem
+            video_path = videos_dir / f"{func_name}.mp4"
+
+            if video_path.exists() and not args.force:
+                skipped += 1
+                continue
+
+            print(f"ℹ Rendering {func_name} by executing...")
+
+            try:
+                code = source_file.read_text()
+                frames = execute_animation(
+                    code, func_name, args.duration, args.fps)
+
+                if not frames:
+                    print(f"✗ No frames captured")
+                    failed += 1
+                    continue
+
+                render_frames_to_video(frames, video_path, args.fps)
+                print(f"✓ Saved {video_path} ({len(frames)} frames)")
+                success += 1
+
+            except Exception as e:
+                print(f"✗ Failed: {e}")
+                failed += 1
+
+    print(
+        f"\n✓ Success: {success} | ⊘ Skipped: {skipped} | ✗ Failed: {failed}")
+
 
 if __name__ == '__main__':
     main()
