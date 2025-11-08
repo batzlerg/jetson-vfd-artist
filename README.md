@@ -2,8 +2,9 @@
 
 AI-powered animation generator for CD5220 VFD displays.
 
-This project consists of three main components:
+This project consists of four main components:
 *   **VFD Animation Agent (`vfd_agent.py`):** Generates animations using AI.
+*   **Analytics Tool (`analyze.py`):** Analyzes telemetry, bookmarks, and performance metrics.
 *   **Frame Capture Inspector (`inspect_frame_captures.sh`):** A tool for examining and analyzing frame captures.
 *   **VFD Animation Renderer (`to_video.py`):** Converts generated animations to MP4 videos.
 
@@ -47,13 +48,18 @@ VFD_DEVICE=simulator ./vfd_agent.py --idea "test" --preview
 ```
 
 jetson-vfd-artist/
-├── vfd_agent.py              \# Main animation agent
-├── to_video.py               \# Video renderer
-├── inspect_frame_captures.sh \# Frame inspector
-├── generated_animations/     \# Output directory
-│   ├── frame_captures/      \# JSONL frame data
-│   └── videos/              \# Rendered MP4s
-└── prompt.txt               \# AI generation template
+├── vfd_agent.py                  \# Main animation agent
+├── analyze.py                    \# Analytics and metrics tool
+├── to_video.py                   \# Video renderer
+├── inspect_frame_captures.sh     \# Frame inspector
+├── generated_animations/         \# Output directory
+│   ├── frame_captures/          \# JSONL frame data
+│   ├── videos/                  \# Rendered MP4s
+│   └── telemetry/               \# Analytics data
+│       ├── events_2025_11_06.jsonl  \# Daily archives (PST)
+│       ├── events_active.jsonl      \# Current session
+│       └── training.jsonl           \# Training data
+└── prompt.txt                   \# AI generation template
 
 ```
 
@@ -66,7 +72,6 @@ A high-fidelity LLM-powered animation generation system for the CD5220 VFD custo
 The agent operates in two distinct modes:
 
 #### Continuous Generation Mode (Default)
-
 *   Generates animations **infinitely** in the background
 *   Maintains a **queue** of pre-generated animations (configurable size)
 *   **Display never goes blank** - plays queued animations while new ones generate
@@ -74,7 +79,6 @@ The agent operates in two distinct modes:
 *   Run: `./vfd_agent.py`
 
 #### Single-Shot Mode (Custom Ideas)
-
 *   Generates **exactly ONE animation** based on a custom idea
 *   Loops that animation **forever** until interrupted
 *   Useful for testing, refinement, or showcasing a specific concept
@@ -152,6 +156,68 @@ VFD_DEVICE=simulator ./vfd_agent.py --preview
 ```
 
 The `--preview` flag shows console output and works with both hardware and simulator modes.
+
+## Analytics Tool (`analyze.py`)
+
+Analyze generation telemetry, performance metrics, bookmarks, and downvotes across all historical data. Telemetry is organized into daily archives by PST date for efficient querying.
+
+### Quick Start
+
+```
+
+
+# View all bookmarked animations
+
+./analyze.py bookmarks
+
+# View downvoted animations
+
+./analyze.py downvotes
+
+# Compare bookmarks vs downvotes
+
+./analyze.py ratings
+
+# Daily generation summary
+
+./analyze.py summary
+
+# Pattern performance analysis
+
+./analyze.py patterns
+
+# Recent failures
+
+./analyze.py failures 20
+
+# Success rate trend
+
+./analyze.py trend 7
+
+```
+
+### Available Commands
+
+| Command | Description | Example |
+| :-- | :-- | :-- |
+| `summary` | Daily generation summary with success rates | `./analyze.py summary` |
+| `patterns` | Pattern performance statistics | `./analyze.py patterns` |
+| `failures [n]` | Recent failures (default: 10) | `./analyze.py failures 20` |
+| `trend [days]` | Success rate trend (default: 7 days) | `./analyze.py trend 14` |
+| `bookmarks` | Show all bookmarked animations with analytics | `./analyze.py bookmarks` |
+| `downvotes` | Show all downvoted animations | `./analyze.py downvotes` |
+| `ratings` | Compare bookmarks vs downvotes for net ratings | `./analyze.py ratings` |
+| `export [min]` | Export training data (default: min 5 variety) | `./analyze.py export 10` |
+
+### Telemetry Organization
+
+Telemetry data is stored in date-based archives organized by PST (Pacific Standard Time):
+
+- `events_YYYY_MM_DD.jsonl` - Immutable daily archives
+- `events_active.jsonl` - Current session (rotated daily)
+- `training.jsonl` - Training data for model refinement
+
+All commands automatically read from all archive files, providing complete historical analysis.
 
 ## Frame Capture Inspector (`inspect_frame_captures.sh`)
 
@@ -232,7 +298,7 @@ Uses JSONL files created by `vfd_agent.py --preview` during playback.
 
 ```
 
-./to_video.py generated_animations/anim_1234567890.py         \# execute code
+./to_video.py generated_animations/anim_1234567890.py          \# execute code
 ./to_video.py frame_captures/anim_1234567890_playback.jsonl   \# use captured frames
 
 ```

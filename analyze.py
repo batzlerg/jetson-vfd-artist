@@ -2,6 +2,7 @@
 
 import sys
 import json
+import glob
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
@@ -12,15 +13,41 @@ TRAINING_FILE = TELEMETRY_DIR / 'training.jsonl'
 
 
 def load_events():
-    if not EVENTS_FILE.exists():
-        print(f"Error: {EVENTS_FILE} not found")
+    """Load telemetry events from all archive files."""
+    archive_pattern = str(TELEMETRY_DIR / 'events_*.jsonl')
+    telemetry_files = sorted(glob.glob(archive_pattern))
+
+    if not telemetry_files:
+        telemetry_files = [str(TELEMETRY_DIR / 'events_active.jsonl')]
+
+    existing_files = [f for f in telemetry_files if Path(f).exists()]
+    if not existing_files:
+        print(f"Error: No telemetry files found in {TELEMETRY_DIR}")
         print(f"Have you run the VFD agent with telemetry enabled yet?")
         return pd.DataFrame()
 
     try:
-        df = pd.read_json(EVENTS_FILE, lines=True)
+        all_records = []
+        for telemetry_file in existing_files:
+            with open(telemetry_file, 'r') as f:
+                for line_num, line in enumerate(f, 1):
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line)
+                        all_records.append(record)
+                    except json.JSONDecodeError:
+                        continue
+
+        if not all_records:
+            print("No valid records found in telemetry files")
+            return pd.DataFrame()
+
+        df = pd.DataFrame(all_records)
+
         if 'timestamp' in df.columns:
-            df['datetime'] = pd.to_datetime(df['timestamp'])
+            df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
+
         return df
     except Exception as e:
         print(f"Error loading events: {e}")
@@ -28,6 +55,7 @@ def load_events():
 
 
 def summary():
+    """Generate daily summary statistics."""
     df = load_events()
     if df.empty:
         return "No data available"
@@ -44,8 +72,8 @@ def summary():
 
     return summary_df
 
-
 def pattern_performance():
+    """Analyze spatial pattern performance metrics."""
     df = load_events()
     if df.empty:
         return "No data available"
@@ -87,6 +115,7 @@ def pattern_performance():
 
 
 def recent_failures(n=10):
+    """Show recent generation failures."""
     df = load_events()
     if df.empty:
         return "No data available"
@@ -103,6 +132,7 @@ def recent_failures(n=10):
 
 
 def success_rate_trend(days=7):
+    """Calculate success rate trend over recent days."""
     df = load_events()
     if df.empty:
         return "No data available"
@@ -128,8 +158,10 @@ def success_rate_trend(days=7):
 
 
 def export_training_data(output_file=None, min_variety=5):
+    """Export high-quality training data for model refinement."""
     if output_file is None:
         output_file = Path('generated_animations/exports/training_refined.jsonl')
+
     output_file = Path(output_file)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -171,12 +203,11 @@ def export_training_data(output_file=None, min_variety=5):
 
 
 def bookmarks():
-    """Show all bookmarked animations with analytics"""
+    """Show all bookmarked animations with analytics."""
     df = load_events()
     if df.empty:
         return "No data available"
 
-    # Filter to bookmark events
     bookmarks_df = df[df['message'] == 'bookmark'].copy()
 
     if bookmarks_df.empty:
@@ -188,18 +219,16 @@ def bookmarks():
         gen_cols = generations[['generation_id', 'unique_chars_count']].copy()
         bookmarks_df = bookmarks_df.merge(gen_cols, on='generation_id', how='left', suffixes=('_bm', '_gen'))
 
-        # Use the generation's unique_chars_count
         if 'unique_chars_count_gen' in bookmarks_df.columns:
             bookmarks_df['unique_chars_count'] = bookmarks_df['unique_chars_count_gen']
             bookmarks_df = bookmarks_df.drop(columns=['unique_chars_count_bm', 'unique_chars_count_gen'], errors='ignore')
 
-    # Prepare display columns
     display_cols = ['datetime', 'generation_id', 'idea', 'unique_chars_count']
     display_cols = [c for c in display_cols if c in bookmarks_df.columns]
 
     result = bookmarks_df[display_cols].sort_values('datetime', ascending=False)
 
-    # Add summary statistics
+    # Summary statistics
     print(f"Total bookmarks: {len(bookmarks_df)}")
     if 'unique_chars_count' in bookmarks_df.columns:
         avg_variety = bookmarks_df['unique_chars_count'].mean()
@@ -219,8 +248,8 @@ def bookmarks():
     return result
 
 
-def downvotes():  # ★ NEW
-    """Show all downvoted animations"""
+def downvotes():
+    """Show all downvoted animations."""
     df = load_events()
     if df.empty:
         return "No data available"
@@ -245,9 +274,8 @@ def downvotes():  # ★ NEW
     print()
     return result
 
-
-def ratings():  # ★ NEW
-    """Compare bookmarks vs downvotes for net ratings"""
+def ratings():
+    """Compare bookmarks vs downvotes for net ratings."""
     df = load_events()
     if df.empty:
         return "No data available"
@@ -277,7 +305,6 @@ def ratings():  # ★ NEW
         print(f"  {idea:40s} +{up} -{down} (net: +{net})")
 
     return ""
-
 
 def main():
     if len(sys.argv) < 2:
@@ -321,11 +348,11 @@ def main():
         print("\n=== Bookmarked Animations ===")
         print(bookmarks())
 
-    elif command == 'downvotes':  # ★ NEW
+    elif command == 'downvotes':
         print("\n=== Downvoted Animations ===")
         print(downvotes())
 
-    elif command == 'ratings':  # ★ NEW
+    elif command == 'ratings':
         print("\n=== Animation Ratings Summary ===")
         print(ratings())
 
