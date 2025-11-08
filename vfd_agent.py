@@ -734,7 +734,7 @@ class DisplayController:
 
                 if current >= target:
                     line1 = "LOADING 100%".center(20)
-                    line2 = "██████████".center(20)
+                    line2 = "==========".center(20)
                     self.animator.write_frame(line1, line2)
                     time.sleep(0.15)
                     self.animator.clear_display()
@@ -746,7 +746,7 @@ class DisplayController:
                 if percent_int != last_percent:
                     filled = int(percent * 10)
                     line1 = f"LOADING {percent_int:03d}%".center(20)
-                    bar = "█" * filled + " " * (10 - filled)
+                    bar = "=" * filled + " " * (10 - filled)
                     line2 = f"[{bar}]".center(20)
                     self.animator.write_frame(line1, line2)
                     last_percent = percent_int
