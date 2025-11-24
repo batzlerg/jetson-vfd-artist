@@ -17,12 +17,21 @@ This project consists of three main components:
 
 ## Install
 
-```
-
+```bash
+# Set up virtual environment
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
 
+# Install core dependencies
+pip install -r requirements.txt
+```
+
+### For Interactive Development (Optional)
+
+To use the interactive Marimo notebooks for development and analysis, install the additional dependencies:
+
+```bash
+pip install -r requirements-marimo.txt
 ```
 
 ## Quick Test
@@ -152,6 +161,25 @@ VFD_DEVICE=simulator ./vfd_agent.py --preview
 ```
 
 The `--preview` flag shows console output and works with both hardware and simulator modes.
+
+## Interactive Development with Marimo
+
+For a powerful interactive development experience, this project includes several Marimo notebooks. These notebooks provide a web-based UI for iterating on AI prompts, analyzing results, and directly controlling the VFD hardware.
+
+### Running the Notebooks
+
+1.  **Install Dependencies:** Make sure you have installed the optional Marimo dependencies as described in the `Install` section.
+2.  **Start the Server:** Run the following command from the root of the project:
+    ```bash
+    marimo edit notebooks/
+    ```
+3.  **Open in Browser:** Open the URL provided by the command (usually `http://localhost:2718`) in your web browser. This will open the Marimo editor, where you can see and run the project's notebooks.
+
+### Available Notebooks
+
+*   **`agent_studio.py`**: The primary tool for AI development. Use it to edit prompts, generate animation code, validate it, and preview the results frame-by-frame in a simulator. This is the recommended workflow for creating new animations.
+*   **`vfd_playground.py`**: A simple interface for direct hardware control. Use it to test the VFD connection or display simple text.
+*   **`metrics_dashboard.py`**: A dashboard for visualizing project metrics, such as generation success rates, animation complexity, and more.
 
 ## Frame Capture Inspector (`inspect_frame_captures.sh`)
 

@@ -20,7 +20,6 @@ def __(mo):
     mo.md(
         "Interactive workbench for iterating on AI agent prompts and animation ideas."
     )
-    return
 
 
 @app.cell
@@ -62,12 +61,13 @@ def __(generate_button, idea, mo, prompt_text):
 
 @app.cell
 def __(code, gen_error, mo, raw_response):
+    output = None
     if code:
         # Display generated code
-        return mo.md(f"### Generated Code\n```python\n{code}\n```")
+        output = mo.md(f"### Generated Code\n```python\n{code}\n```")
     elif raw_response:
         # Display error and raw response on failure
-        return mo.md(
+        output = mo.md(
             f"""
             ### Generation Failed
             **Error:** `{gen_error}`
@@ -77,67 +77,66 @@ def __(code, gen_error, mo, raw_response):
             </details>
             """
         )
-    return
+    output
 
 
 @app.cell
 def __(DiffAnimator, code, func_name, mo, random, validate_runtime, validate_syntax):
-    if not code:
-        return
+    validation_status = None
+    frame_capture = None
+    callable_func = None
 
-    # --- Validation Step ---
-    mo.md("### Validation")
-    syntax_ok, syntax_err = validate_syntax(code)
-    if not syntax_ok:
-        validation_status = mo.md(f"**Syntax:** ✗ FAILED: `{syntax_err}`")
-        return validation_status, None, None
+    if code:
+        header = mo.md("### Validation")
+        syntax_ok, syntax_err = validate_syntax(code)
+        syntax_status = mo.md(f"**Syntax:** {'✓ OK' if syntax_ok else f'✗ FAILED: `{syntax_err}`'}")
 
-    syntax_status = mo.md(f"**Syntax:** ✓ OK")
+        if syntax_ok:
+            try:
+                namespace = {
+                    "DiffAnimator": DiffAnimator,
+                    "random": random,
+                    "math": __import__("math"),
+                }
+                exec(code, namespace)
+                callable_func = namespace.get(func_name)
+                compilation_status = mo.md(f"**Compilation:** {'✓ OK' if callable_func else '✗ FAILED: Function not found'}")
+            except Exception as e:
+                callable_func = None
+                compilation_status = mo.md(f"**Compilation:** ✗ FAILED: `{e}`")
 
-    try:
-        namespace = {
-            "DiffAnimator": DiffAnimator,
-            "random": random,
-            "math": __import__("math"),
-        }
-        exec(code, namespace)
-        callable_func = namespace[func_name]
-    except Exception as e:
-        compilation_status = mo.md(f"**Compilation:** ✗ FAILED: `{e}`")
-        return mo.vstack([syntax_status, compilation_status]), None, None
+            if callable_func:
+                runtime_ok, runtime_err, captured_frames = validate_runtime(
+                    callable_func, func_name
+                )
+                if runtime_ok:
+                    runtime_status = mo.md(f"**Runtime:** ✓ OK")
+                    frame_capture = captured_frames
+                else:
+                    runtime_status = mo.md(f"**Runtime:** ✗ FAILED: `{runtime_err}`")
+                validation_status = mo.vstack([header, syntax_status, compilation_status, runtime_status])
+            else:
+                 validation_status = mo.vstack([header, syntax_status, compilation_status])
+        else:
+            validation_status = mo.vstack([header, syntax_status])
 
-    compilation_status = mo.md(f"**Compilation:** ✓ OK")
-
-    runtime_ok, runtime_err, frame_capture = validate_runtime(
-        callable_func, func_name
-    )
-    if not runtime_ok:
-        runtime_status = mo.md(f"**Runtime:** ✗ FAILED: `{runtime_err}`")
-    else:
-        runtime_status = mo.md(f"**Runtime:** ✓ OK")
-
-    validation_status = mo.vstack(
-        [syntax_status, compilation_status, runtime_status]
-    )
-
-    return validation_status, frame_capture, callable_func
+    (validation_status, frame_capture, callable_func)
 
 
 @app.cell
 def __(frame_capture, mo):
-    if not frame_capture:
-        return
-
-    # --- Preview Step ---
-    mo.md("### Animation Preview")
-    frames = frame_capture.get_frames()
-    if not frames:
-        return mo.md("**Warning:** Animation ran but produced no frames.")
-
-    md_frames = [f"```\n{f['line1']}\n{f['line2']}\n```" for f in frames]
-
-    frame_slider = mo.ui.slider(
-        0, len(md_frames) - 1, label=f"Frame ({len(md_frames)} total)"
-    )
-
-    return mo.vstack([frame_slider, mo.md(md_frames[frame_slider.value])])
+    preview_output = None
+    if frame_capture:
+        header = mo.md("### Animation Preview")
+        frames = frame_capture.get_frames()
+        if not frames:
+            preview_output = mo.vstack([header, mo.md("**Warning:** Animation ran but produced no frames.")])
+        else:
+            md_frames = [f"```\n{f['line1']}\n{f['line2']}\n```" for f in frames]
+            frame_slider = mo.ui.slider(
+                0, max(0, len(md_frames) - 1), label=f"Frame ({len(md_frames)} total)"
+            )
+            # A check to prevent IndexError if md_frames is empty
+            selected_frame = mo.md(md_frames[frame_slider.value]) if md_frames else mo.md("")
+            preview_output = mo.vstack([header, frame_slider, selected_frame])
+    preview_output
