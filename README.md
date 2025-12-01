@@ -171,9 +171,10 @@ For a powerful interactive development experience, this project includes several
 1.  **Install Dependencies:** Make sure you have installed the optional Marimo dependencies as described in the `Install` section.
 2.  **Start the Server:** Run the following command from the root of the project:
     ```bash
-    marimo edit notebooks/
+    marimo edit
     ```
-3.  **Open in Browser:** Open the URL provided by the command (usually `http://localhost:2718`) in your web browser. This will open the Marimo editor, where you can see and run the project's notebooks.
+3.  **Open in Browser:** Open the URL provided by the command (usually `http://localhost:2718`) in your web browser. This will open the Marimo editor in the current directory.
+4.  **Navigate to Notebooks:** Click on the `notebooks/` directory in the file explorer to see and run the project's notebooks.
 
 ### Available Notebooks
 

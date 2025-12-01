@@ -87,7 +87,7 @@ def __(DiffAnimator, code, func_name, mo, random, validate_runtime, validate_syn
     callable_func = None
 
     if code:
-        header = mo.md("### Validation")
+        validation_header = mo.md("### Validation")
         syntax_ok, syntax_err = validate_syntax(code)
         syntax_status = mo.md(f"**Syntax:** {'✓ OK' if syntax_ok else f'✗ FAILED: `{syntax_err}`'}")
 
@@ -114,11 +114,11 @@ def __(DiffAnimator, code, func_name, mo, random, validate_runtime, validate_syn
                     frame_capture = captured_frames
                 else:
                     runtime_status = mo.md(f"**Runtime:** ✗ FAILED: `{runtime_err}`")
-                validation_status = mo.vstack([header, syntax_status, compilation_status, runtime_status])
+                validation_status = mo.vstack([validation_header, syntax_status, compilation_status, runtime_status])
             else:
-                 validation_status = mo.vstack([header, syntax_status, compilation_status])
+                 validation_status = mo.vstack([validation_header, syntax_status, compilation_status])
         else:
-            validation_status = mo.vstack([header, syntax_status])
+            validation_status = mo.vstack([validation_header, syntax_status])
 
     (validation_status, frame_capture, callable_func)
 
@@ -127,10 +127,10 @@ def __(DiffAnimator, code, func_name, mo, random, validate_runtime, validate_syn
 def __(frame_capture, mo):
     preview_output = None
     if frame_capture:
-        header = mo.md("### Animation Preview")
+        preview_header = mo.md("### Animation Preview")
         frames = frame_capture.get_frames()
         if not frames:
-            preview_output = mo.vstack([header, mo.md("**Warning:** Animation ran but produced no frames.")])
+            preview_output = mo.vstack([preview_header, mo.md("**Warning:** Animation ran but produced no frames.")])
         else:
             md_frames = [f"```\n{f['line1']}\n{f['line2']}\n```" for f in frames]
             frame_slider = mo.ui.slider(
@@ -138,5 +138,5 @@ def __(frame_capture, mo):
             )
             # A check to prevent IndexError if md_frames is empty
             selected_frame = mo.md(md_frames[frame_slider.value]) if md_frames else mo.md("")
-            preview_output = mo.vstack([header, frame_slider, selected_frame])
+            preview_output = mo.vstack([preview_header, frame_slider, selected_frame])
     preview_output
